@@ -4,24 +4,24 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import classification_report
 
-# Import Elite V2 modules
+# Import Elite V4 modules
 from data_loader import load_ohlcv, merge_with_lob_asof
 from feature_engineering import run_feature_pipeline_elite_v2
 from lob_processing import process_lob_elite_v2
 from labeling import apply_triple_barrier_elite_v2
 from model import train_elite_ensemble_v2
-from backtest import run_backtest_elite_v2
+from backtest import run_backtest_elite_v4
 
 # Configure Enhanced Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [%(name)s] - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("elite_pipeline_v2.log"),
+        logging.FileHandler("elite_pipeline_v4.log"),
         logging.StreamHandler()
     ]
 )
-logger = logging.getLogger("Elite_NSE_Pipeline_V2")
+logger = logging.getLogger("Elite_NSE_Pipeline_V4")
 
 def main():
     # PATHS
@@ -29,14 +29,16 @@ def main():
     KB_LOB_PATH = '/Users/Pothuri/Downloads/kubera/kblobop.csv.gz'
     LOB_V2_PARQUET = '/Users/Pothuri/Downloads/kubera/lob_v2_elite.parquet'
     
-    # CONFIG (V2 ALPHA)
-    LABEL_CONFIG = {'tp_mult': 2.0, 'sl_mult': 1.0, 'max_bars': 6}
+    # CONFIG (V4 Multi-Objective Optimized)
+    LABEL_CONFIG = {'tp_mult': 1.5, 'sl_mult': 1.0, 'max_bars': 6}
     BT_CONFIG = {
-        'cost': 0.0003, # Tier-1 Turn-over based cost
-        'slippage': 0.0002, 
-        'prob_threshold': 0.65, # Tighten confidence for signal quality
-        'vol_filter_quantile': 0.2, # Avoid lowest vol session noise
-        'spread_filter_threshold': 0.0015 # Avoid liquidity traps
+        'cost': 0.0002, # ISSUE 1: Reduced cost
+        'slippage': 0.0001, # ISSUE 1: Reduced slippage
+        'long_threshold': 0.52,
+        'short_threshold': 0.55,
+        'confidence_gap_threshold': 0.12,
+        'vol_filter_quantile': 0.2,
+        'spread_filter_threshold': 0.0015
     }
     
     # 1. PROCESS LOB (Enhanced Microstructure)
@@ -44,7 +46,7 @@ def main():
         logger.info("Initializing Elite LOB (V2) processing...")
         process_lob_elite_v2(KB_LOB_PATH, LOB_V2_PARQUET)
     else:
-        logger.info(f"Using existing LOB V2 features from {LOB_V2_PARQUET}")
+        logger.info(f"Using existing LOB V2 features from {LOB_V2_PARQUET} (ISSUE 7)")
 
     # 2. LOAD & PROCESS OHLCV (Alpha Engineering)
     df_ohlcv = load_ohlcv(KB_OHLCV_PATH)
@@ -80,20 +82,23 @@ def main():
     p_c = best_cb.predict_proba(df_test[selected_features])
     probs = (p_l + p_c) / 2
     
-    # 7. ELITE BACKTESTING (Execution-Aware Filtering)
-    bt_df, portfolio_rets, metrics = run_backtest_elite_v2(
+    # 7. ELITE BACKTESTING V4 (Execution-Aware Filtering + Sizing)
+    bt_df, portfolio_rets, metrics = run_backtest_elite_v4(
         df_test, probs, 
         cost=BT_CONFIG['cost'], 
         slippage=BT_CONFIG['slippage'], 
-        prob_threshold=BT_CONFIG['prob_threshold'],
+        long_threshold=BT_CONFIG['long_threshold'],
+        short_threshold=BT_CONFIG['short_threshold'],
+        confidence_gap_threshold=BT_CONFIG['confidence_gap_threshold'],
         vol_filter_quantile=BT_CONFIG['vol_filter_quantile'],
         spread_filter_threshold=BT_CONFIG['spread_filter_threshold']
     )
     
-    logger.info("Elite Pipeline V2 Execution Finished.")
+    logger.info(f"FINAL V4 SHARPE: {metrics['Sharpe']:.2f}, N_TRADES: {len(bt_df[bt_df['turnover'] > 0])}")
+    logger.info("Elite Pipeline V4 Execution Finished Successfully.")
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logger.error(f"Elite Pipeline V2 encountered a fatal error: {e}", exc_info=True)
+        logger.error(f"Elite Pipeline V4 encountered a fatal error: {e}", exc_info=True)
