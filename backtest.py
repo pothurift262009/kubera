@@ -5,7 +5,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-def compute_v8_metrics(portfolio_rets: pd.Series):
+def compute_v9_metrics(portfolio_rets: pd.Series):
     if portfolio_rets.empty: return {'Sharpe': -9, 'Profit Factor': 0}
     cum_rets = (1 + portfolio_rets).cumprod()
     total_ret = cum_rets.iloc[-1] - 1
@@ -27,78 +27,83 @@ def compute_v8_metrics(portfolio_rets: pd.Series):
     return {
         'Total Return': total_ret,
         'Sharpe': sharpe,
-        'Sortino': sortino,
         'Max Drawdown': max_dd,
         'Profit Factor': profit_factor,
         'Win Rate': (portfolio_rets > 0).mean()
     }
 
-def run_backtest_elite_v8(df: pd.DataFrame, probs: np.array,
+def run_backtest_elite_v9(df: pd.DataFrame, probs: np.array,
                          cost=0.0002, slippage=0.0001, 
-                         long_threshold=0.60, short_threshold=0.62, 
-                         conf_gap_threshold=0.12, strength_percentile=0.25,
+                         long_threshold=0.58, short_threshold=0.60, 
+                         conf_gap_threshold=0.10, strength_percentile=0.20,
                          min_hold_bars=3, 
                          vol_filter_quantile=0.4, spread_filter_threshold=0.0012):
     """
-    Elite Production Backtester V8: Asymmetric Payoff Expectancy & Quality Gates.
-    Strictly follows production-spec for Sharpe > 1.2 and PF > 1.2.
+    Elite Production Backtester V9: Scoring System & High-Precision Sizing.
+    Follows Senior Quant Engineer spec for PF > 1.2 and Sharpe > 1.2.
+    Fixes expectancy bugs, brittle filters, and premature exits.
     """
-    logger.info("Starting Elite Backtest (V8: High-Reward Alpha Selection)...")
+    logger.info("Starting Elite Backtest (V9: Scoring Engine & Sizing Overhaul)...")
     
     bt_df = df.copy()
+    # Classes: 0=Short, 1=Flat, 2=Long
     bt_df['p_s'], bt_df['p_f'], bt_df['p_l'] = probs[:, 0], probs[:, 1], probs[:, 2]
     
-    # 1. ELITE ALPHA METRICS
-    # Strength = Max Predicted Probability
+    # 1. FIX EXPECTANCY CALCULATION (ISSUE 1)
+    # E[R] = P(long)*TP - P(short)*SL (Corrected for 3-class model)
+    # Using V8 labeling specs: TP=2.2, SL=1.0
+    bt_df['expectancy_l'] = (bt_df['p_l'] * 2.2 * bt_df['atr_pct']) - (bt_df['p_s'] * 1.0 * bt_df['atr_pct'])
+    bt_df['expectancy_s'] = (bt_df['p_s'] * 2.2 * bt_df['atr_pct']) - (bt_df['p_l'] * 1.0 * bt_df['atr_pct'])
+    
+    # 2. SCORING SYSTEM (ISSUE 3)
     bt_df['strength'] = np.max(probs, axis=1)
-    
-    # Confidence Gap = Top1 - Top2
-    sorted_probs = np.sort(probs, axis=1)
-    bt_df['conf_gap'] = sorted_probs[:, -1] - sorted_probs[:, -2]
-    
-    # ISSUE 4: Strength Threshold: Remove weakest 25%
+    sorted_p = np.sort(probs, axis=1)
+    bt_df['conf_gap'] = sorted_p[:, -1] - sorted_p[:, -2]
     strength_floor = bt_df['strength'].quantile(strength_percentile)
-    
-    # ISSUE 2: EXPECTANCY FILTER (TP=2.2, SL=1.0)
-    # Expected Return = P(Long)*2.2*ATR - P(Short)*1.0*ATR
-    bt_df['expectancy_l'] = bt_df['p_l'] * (2.2 * bt_df['atr_pct']) - (1.0 - bt_df['p_l']) * (1.0 * bt_df['atr_pct'])
-    bt_df['expectancy_s'] = bt_df['p_s'] * (2.2 * bt_df['atr_pct']) - (1.0 - bt_df['p_s']) * (1.0 * bt_df['atr_pct'])
-    
-    # 2. ELITE FILTER GATES
-    # Regime: Trend Check OR Vol-Check
     vol_floor = bt_df['atr_pct'].quantile(vol_filter_quantile)
-    bt_df['regime_ok'] = ((bt_df['adx_14'] > 25) | (bt_df['atr_pct'] > vol_floor)).astype(int)
     
-    # Microstructure Correlation
-    l_micro = (bt_df['ofi'] > 0) & (bt_df['micro_mid_diff'] > 0)
-    s_micro = (bt_df['ofi'] < 0) & (bt_df['micro_mid_diff'] < 0)
+    # Pre-compute Scoring Components
+    bt_df['c_regime'] = ((bt_df['adx_14'] > 25) | (bt_df['atr_pct'] > vol_floor)).astype(int)
+    bt_df['c_spread'] = (bt_df['spread_pct'] < spread_filter_threshold).astype(int)
+    bt_df['c_gap'] = (bt_df['conf_gap'] > conf_gap_threshold).astype(int)
+    bt_df['c_strength'] = (bt_df['strength'] > strength_floor).astype(int)
     
-    # Universal Triggers (ISSUE 3 & 5)
+    # Long Scoring
+    l_micro = ((bt_df['ofi'] > 0) & (bt_df['micro_mid_diff'] > 0)).astype(int)
+    bt_df['score_l'] = (bt_df['p_l'] > long_threshold).astype(int) + \
+                       bt_df['c_gap'] + bt_df['c_strength'] + \
+                       (bt_df['expectancy_l'] > 0).astype(int) + \
+                       bt_df['c_regime'] + l_micro + bt_df['c_spread']
+                       
+    # Short Scoring
+    s_micro = ((bt_df['ofi'] < 0) & (bt_df['micro_mid_diff'] < 0)).astype(int)
+    bt_df['score_s'] = (bt_df['p_s'] > short_threshold).astype(int) + \
+                       bt_df['c_gap'] + bt_df['c_strength'] + \
+                       (bt_df['expectancy_s'] > 0).astype(int) + \
+                       bt_df['c_regime'] + s_micro + bt_df['c_spread']
+    
     bt_df['trigger'] = 0
-    # Long Gate
-    l_mask = (bt_df['p_l'] > long_threshold) & (bt_df['conf_gap'] > conf_gap_threshold) & \
-             (bt_df['strength'] > strength_floor) & (bt_df['expectancy_l'] > 0) & \
-             bt_df['regime_ok'] & l_micro & (bt_df['spread_pct'] < spread_filter_threshold)
-    bt_df.loc[l_mask, 'trigger'] = 1
+    # Take trade if Score >= 3 (Optimal for trade frequency vs quality balance)
+    bt_df.loc[bt_df['score_l'] >= 3, 'trigger'] = 1
+    bt_df.loc[bt_df['score_s'] >= 3, 'trigger'] = -1
     
-    # Short Gate
-    s_mask = (bt_df['p_s'] > short_threshold) & (bt_df['conf_gap'] > conf_gap_threshold) & \
-             (bt_df['strength'] > strength_floor) & (bt_df['expectancy_s'] > 0) & \
-             bt_df['regime_ok'] & s_micro & (bt_df['spread_pct'] < spread_filter_threshold)
-    bt_df.loc[s_mask, 'trigger'] = -1
+    # 3. POSITION PERSISTENCE & IMPROVED EXIT (ISSUE 4)
+    # Buffer Exit: entry_threshold + 0.05 to avoid premature profit taking
+    l_exit_thresh = long_threshold + 0.05
+    s_exit_thresh = short_threshold + 0.05
+    max_hold_limit = 6 # Corresponds to LABEL_CONFIG max_bars
     
-    # 3. POSITION PERSISTENCE & MIN-HOLD (Elite Multi-Symbol Logic)
     bt_df = bt_df.sort_values(['symbol', 'datetime'])
     final_positions = []
     
     for _, grp in bt_df.groupby('symbol'):
         triggers = grp['trigger'].values
-        probs_l = grp['p_l'].values
-        probs_s = grp['p_s'].values
+        p_l = grp['p_l'].values
+        p_s = grp['p_s'].values
         
-        pos = 0.0          # Current position (-1, 0, 1)
-        hold_count = 0     # Bars held
-        entry_size = 0.0   # Fixed at moment of entry
+        pos = 0.0
+        hold_count = 0
+        entry_size = 0.0
         
         symbol_pos = np.zeros(len(triggers))
         
@@ -106,27 +111,31 @@ def run_backtest_elite_v8(df: pd.DataFrame, probs: np.array,
             t = triggers[i]
             
             if pos == 1:
-                # Contrary signal exit
-                if t == -1 or probs_s[i] > short_threshold:
+                # EXIT/REVERSAL with BUFFER and MAX_HOLD (ISSUE 4)
+                if t == -1 or p_s[i] > s_exit_thresh or hold_count >= max_hold_limit:
                     if hold_count >= min_hold_bars:
                         pos = -1 if t == -1 else 0
-                        entry_size = probs_s[i] if t == -1 else 0
+                        entry_size = max(0, p_s[i] - short_threshold) / (1.0 - short_threshold + 1e-10) if pos == -1 else 0
                         hold_count = 1 if t == -1 else 0
                 else: hold_count += 1
             elif pos == -1:
-                # Contrary signal exit
-                if t == 1 or probs_l[i] > long_threshold:
+                # EXIT/REVERSAL with BUFFER
+                if t == 1 or p_l[i] > l_exit_thresh or hold_count >= max_hold_limit:
                     if hold_count >= min_hold_bars:
                         pos = 1 if t == 1 else 0
-                        entry_size = probs_l[i] if t == 1 else 0
+                        entry_size = max(0, p_l[i] - long_threshold) / (1.0 - long_threshold + 1e-10) if pos == 1 else 0
                         hold_count = 1 if t == 1 else 0
                 else: hold_count += 1
             else:
+                # 4. SCALED POSITION SIZING (ISSUE 2)
                 if t != 0:
                     pos = t
-                    entry_size = probs_l[i] if pos > 0 else probs_s[i]
                     hold_count = 1
-                    
+                    if pos == 1:
+                        entry_size = max(0, p_l[i] - long_threshold) / (1.0 - long_threshold + 1e-10)
+                    else:
+                        entry_size = max(0, p_s[i] - short_threshold) / (1.0 - short_threshold + 1e-10)
+            
             symbol_pos[i] = pos * entry_size if pos != 0 else 0
             
         final_positions.extend(symbol_pos)
@@ -134,25 +143,23 @@ def run_backtest_elite_v8(df: pd.DataFrame, probs: np.array,
     bt_df['persistent_pos'] = final_positions
     bt_df['actual_pos'] = bt_df.groupby('symbol')['persistent_pos'].shift(1).fillna(0)
     
-    # 4. RETURNS & COSTS
-    dt_rets = bt_df.groupby('symbol')['close'].pct_change().fillna(0)
-    bt_df['net_ret'] = (bt_df['actual_pos'] * dt_rets) - \
-                      (bt_df.groupby('symbol')['actual_pos'].diff().abs().fillna(0) * (cost + slippage))
+    # 5. RETURNS & AUDIT
+    bt_df['net_ret'] = (bt_df['actual_pos'] * bt_df.groupby('symbol')['close'].pct_change().fillna(0)) - \
+                      (bt_df.groupby('symbol')['actual_pos'].diff().abs().fillna(0) * (cost+slippage))
     
-    # 5. FINAL AGGREGATION
+    # 6. METRICS
     p_rets = bt_df.groupby('datetime')['net_ret'].mean()
-    metrics = compute_v8_metrics(p_rets)
+    metrics = compute_v9_metrics(p_rets)
     
-    # Trade frequency monitoring
     bt_df['pos_sign'] = np.sign(bt_df['actual_pos'])
     num_trades = len(bt_df[bt_df.groupby('symbol')['pos_sign'].diff().fillna(0) != 0])
     
-    logger.info(f"== V8 ELITE BACKTEST METRICS (N_TRADES={num_trades}) ==")
+    logger.info(f"== V9 ELITE BACKTEST METRICS (N_TRADES={num_trades}) ==")
     for k, v in metrics.items():
         if 'Sharpe' in k or 'Factor' in k: logger.info(f"{k}: {v:.2f}")
         else: logger.info(f"{k}: {v:.2%}")
         
     os.makedirs('logs', exist_ok=True)
-    bt_df[bt_df.groupby('symbol')['pos_sign'].diff().fillna(0) != 0].to_csv('logs/trade_log_v8.csv', index=False)
+    bt_df[bt_df.groupby('symbol')['pos_sign'].diff().fillna(0) != 0].to_csv('logs/trade_log_v9.csv', index=False)
     
     return bt_df, p_rets, metrics
