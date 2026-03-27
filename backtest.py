@@ -35,7 +35,7 @@ def compute_v9_metrics(portfolio_rets: pd.Series):
 def run_backtest_elite_v9(df: pd.DataFrame, probs: np.array,
                          cost=0.0002, slippage=0.0001, 
                          long_threshold=0.58, short_threshold=0.60, 
-                         conf_gap_threshold=0.10, strength_percentile=0.20,
+                         conf_gap_threshold=0.08, strength_percentile=0.20,
                          min_hold_bars=3, 
                          vol_filter_quantile=0.4, spread_filter_threshold=0.0012):
     """
@@ -72,14 +72,14 @@ def run_backtest_elite_v9(df: pd.DataFrame, probs: np.array,
     l_micro = ((bt_df['ofi'] > 0) & (bt_df['micro_mid_diff'] > 0)).astype(int)
     bt_df['score_l'] = (bt_df['p_l'] > long_threshold).astype(int) + \
                        bt_df['c_gap'] + bt_df['c_strength'] + \
-                       (bt_df['expectancy_l'] > 0).astype(int) + \
+                       (bt_df['expectancy_l'] > 0.1 * bt_df['atr_pct']).astype(int) + \
                        bt_df['c_regime'] + l_micro + bt_df['c_spread']
                        
     # Short Scoring
     s_micro = ((bt_df['ofi'] < 0) & (bt_df['micro_mid_diff'] < 0)).astype(int)
     bt_df['score_s'] = (bt_df['p_s'] > short_threshold).astype(int) + \
                        bt_df['c_gap'] + bt_df['c_strength'] + \
-                       (bt_df['expectancy_s'] > 0).astype(int) + \
+                       (bt_df['expectancy_s'] > 0.1 * bt_df['atr_pct']).astype(int) + \
                        bt_df['c_regime'] + s_micro + bt_df['c_spread']
     
     bt_df['trigger'] = 0
@@ -88,9 +88,9 @@ def run_backtest_elite_v9(df: pd.DataFrame, probs: np.array,
     bt_df.loc[bt_df['score_s'] >= 3, 'trigger'] = -1
     
     # 3. POSITION PERSISTENCE & IMPROVED EXIT (ISSUE 4)
-    # Buffer Exit: entry_threshold + 0.05 to avoid premature profit taking
-    l_exit_thresh = long_threshold + 0.05
-    s_exit_thresh = short_threshold + 0.05
+    # Buffer Exit: entry_threshold + 0.02 (relaxed from 0.05)
+    l_exit_thresh = long_threshold + 0.02
+    s_exit_thresh = short_threshold + 0.02
     max_hold_limit = 6 # Corresponds to LABEL_CONFIG max_bars
     
     bt_df = bt_df.sort_values(['symbol', 'datetime'])
@@ -111,19 +111,27 @@ def run_backtest_elite_v9(df: pd.DataFrame, probs: np.array,
             t = triggers[i]
             
             if pos == 1:
-                # EXIT/REVERSAL with BUFFER and MAX_HOLD (ISSUE 4)
-                if t == -1 or p_s[i] > s_exit_thresh or hold_count >= max_hold_limit:
+                # EXIT/REVERSAL with relaxed BUFFER and SIGNAL WEAKENING (ISSUE 3/4)
+                if t == -1 or p_s[i] > s_exit_thresh or p_l[i] < long_threshold:
                     if hold_count >= min_hold_bars:
                         pos = -1 if t == -1 else 0
-                        entry_size = max(0, p_s[i] - short_threshold) / (1.0 - short_threshold + 1e-10) if pos == -1 else 0
+                        if pos == -1:
+                            raw_size = max(0, p_s[i] - short_threshold) / (1.0 - short_threshold + 1e-10)
+                            entry_size = np.clip(raw_size**0.5, 0.3, 1.0)
+                        else:
+                            entry_size = 0
                         hold_count = 1 if t == -1 else 0
                 else: hold_count += 1
             elif pos == -1:
-                # EXIT/REVERSAL with BUFFER
-                if t == 1 or p_l[i] > l_exit_thresh or hold_count >= max_hold_limit:
+                # EXIT/REVERSAL with relaxed BUFFER and SIGNAL WEAKENING
+                if t == 1 or p_l[i] > l_exit_thresh or p_s[i] < short_threshold:
                     if hold_count >= min_hold_bars:
                         pos = 1 if t == 1 else 0
-                        entry_size = max(0, p_l[i] - long_threshold) / (1.0 - long_threshold + 1e-10) if pos == 1 else 0
+                        if pos == 1:
+                            raw_size = max(0, p_l[i] - long_threshold) / (1.0 - long_threshold + 1e-10)
+                            entry_size = np.clip(raw_size**0.5, 0.3, 1.0)
+                        else:
+                            entry_size = 0
                         hold_count = 1 if t == 1 else 0
                 else: hold_count += 1
             else:
@@ -132,9 +140,11 @@ def run_backtest_elite_v9(df: pd.DataFrame, probs: np.array,
                     pos = t
                     hold_count = 1
                     if pos == 1:
-                        entry_size = max(0, p_l[i] - long_threshold) / (1.0 - long_threshold + 1e-10)
+                        raw_size = max(0, p_l[i] - long_threshold) / (1.0 - long_threshold + 1e-10)
+                        entry_size = np.clip(raw_size**0.5, 0.3, 1.0)
                     else:
-                        entry_size = max(0, p_s[i] - short_threshold) / (1.0 - short_threshold + 1e-10)
+                        raw_size = max(0, p_s[i] - short_threshold) / (1.0 - short_threshold + 1e-10)
+                        entry_size = np.clip(raw_size**0.5, 0.3, 1.0)
             
             symbol_pos[i] = pos * entry_size if pos != 0 else 0
             
