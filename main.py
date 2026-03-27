@@ -2,6 +2,7 @@ import logging
 import os
 import pandas as pd
 import numpy as np
+from sklearn.metrics import classification_report
 
 # Import Elite modules
 from data_loader import load_ohlcv, merge_with_lob_asof
@@ -46,10 +47,15 @@ def main():
     df_features = run_feature_pipeline_elite(df_ohlcv)
     
     # 4. HIGH-FIDELITY MERGE (merge_asof)
-    logger.info("Performing Elite merge_asof for LOB/OHLCV synchronization...")
+    logger.info("Reading LOB parquet and synchronizing...")
     df_lob = pd.read_parquet(LOB_5M_PARQUET)
-    # Ensure datetime matches
-    df_lob['datetime'] = pd.to_datetime(df_lob['datetime']).dt.tz_convert('Asia/Kolkata')
+    
+    # FIXED BUG 5: Robust datetime logic for LOB parquet
+    df_lob['datetime'] = pd.to_datetime(df_lob['datetime'])
+    if df_lob['datetime'].dt.tz is None:
+        df_lob['datetime'] = df_lob['datetime'].dt.tz_localize('Asia/Kolkata')
+    else:
+        df_lob['datetime'] = df_lob['datetime'].dt.tz_convert('Asia/Kolkata')
     
     df_combined = merge_with_lob_asof(df_features, df_lob)
     
@@ -57,16 +63,15 @@ def main():
     df_labeled = apply_triple_barrier_elite(df_combined, config=LABEL_CONFIG)
     
     # 6. ELITE MODELING (Walk-Forward CV)
+    # Filter features: everything except metadata and target
     feature_cols = [c for c in df_labeled.columns if c not in {'symbol', 'datetime', 'label'}]
     
-    # Prepare walk-forward splits on 20% of the data or full (let's use 200k rows for faster elite demo)
-    # df_labeled = df_labeled.sort_values('datetime')
-    
-    best_lgb, best_cb, imp = train_elite_ensemble(df_labeled, feature_cols, n_splits=3)
+    # FIXED BUG 7: Call signature update
+    best_lgb, best_cb, imp, feature_cols = train_elite_ensemble(
+        df_labeled, feature_cols, n_splits=3)
     
     # 7. ELITE BACKTESTING
-    # For backtest, we use the LAST fold's test set or the full test data
-    # Here we simulate on a holdout set (e.g. last 20% of data)
+    # Use last 20% as holdout for backtest
     split_idx = int(0.8 * len(df_labeled))
     df_test = df_labeled.iloc[split_idx:]
     
@@ -75,6 +80,10 @@ def main():
     p_c = best_cb.predict_proba(df_test[feature_cols])
     probs = (p_l + p_c) / 2
     preds = np.argmax(probs, axis=1)
+    
+    # Final Model Metrics
+    logger.info("\n=== HOLD-OUT CLASSIFICATION REPORT ===")
+    logger.info("\n" + classification_report(df_test['label'], preds))
     
     bt_df, portfolio_rets, metrics = run_backtest_elite(
         df_test, preds, probs, 

@@ -9,24 +9,28 @@ import os
 
 logger = logging.getLogger(__name__)
 
-def train_elite_ensemble(df: pd.DataFrame, feature_cols: list, target_col: str = 'label', n_splits: int = 5):
+def train_elite_ensemble(df: pd.DataFrame, feature_cols: list, target_col: str = 'label', n_splits: int = 3):
     """
     Elite Walk-Forward Cross-Validation (TimeSeriesSplit).
     Trains an ensemble of LGBM + CatBoost on each fold.
+    FIXED BUG 7: NaN cleanup and updated return signature.
     """
     logger.info(f"Starting Elite Walk-Forward CV with {n_splits} splits...")
     
     # Sort by datetime to ensure chronological split
     df = df.sort_values('datetime').reset_index(drop=True)
-    X = df[feature_cols]
-    y = df[target_col]
+    
+    # Bug 7: Drop columns with >50% NaN and fill remaining with 0
+    valid_cols = [c for c in feature_cols if df[c].isna().mean() < 0.5]
+    feature_cols = valid_cols
+    X = df[feature_cols].fillna(0)
+    y = df[target_col].fillna(1).astype(int)
     
     tscv = TimeSeriesSplit(n_splits=n_splits)
     
     fold_metrics = []
     best_lgb = None
     best_cb = None
-    best_acc = 0
     
     for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
@@ -60,8 +64,6 @@ def train_elite_ensemble(df: pd.DataFrame, feature_cols: list, target_col: str =
         fold_metrics.append(acc)
         logger.info(f"Fold {fold+1} Accuracy: {acc:.4f}")
         
-        # Keep the best models from the LAST fold (most recent data)
-        # In a real system, we might retrain on ALL seen data for final production.
         best_lgb = lgb_fold
         best_cb = cb_fold
         
@@ -76,4 +78,5 @@ def train_elite_ensemble(df: pd.DataFrame, feature_cols: list, target_col: str =
     best_lgb.booster_.save_model('models/lgb_elite.txt')
     best_cb.save_model('models/cb_elite.cbm')
     
-    return best_lgb, best_cb, imp
+    # FIXED BUG 7: return feature_cols
+    return best_lgb, best_cb, imp, feature_cols

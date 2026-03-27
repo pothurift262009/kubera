@@ -45,33 +45,34 @@ def load_ohlcv(path: str) -> pd.DataFrame:
     logger.info(f"Successfully loaded {len(df):,} rows of OHLCV data.")
     return df
 
-def merge_with_lob_asof(df_ohlcv: pd.DataFrame, df_lob: pd.DataFrame) -> pd.DataFrame:
+def merge_with_lob_asof(df_ohlcv, df_lob):
     """
     High-fidelity time-aware merging using merge_asof.
-    Ensures LOB data aligned with OHLCV bar is strictly backward-looking.
+    FIXED BUG 4: Ensuring matching tz-aware datetimes in IST.
+    FIXED: Global sorting by 'datetime' for merge_asof requirements.
     """
-    logger.info("Performing merge_asof between OHLCV and LOB data...")
+    logger.info("Performing Elite merge_asof between OHLCV and LOB...")
     
-    # Ensure both are sorted by datetime for merge_asof
+    # Ensure both have matching tz-aware datetime in IST
+    for df in [df_ohlcv, df_lob]:
+        if df['datetime'].dt.tz is None:
+            df['datetime'] = df['datetime'].dt.tz_localize('Asia/Kolkata')
+        else:
+            df['datetime'] = df['datetime'].dt.tz_convert('Asia/Kolkata')
+    
+    # CRITICAL: merge_asof requires 'on' key to be globally sorted
     df_ohlcv = df_ohlcv.sort_values('datetime')
-    df_lob = df_lob.sort_values('datetime')
+    df_lob   = df_lob.sort_values('datetime')
     
     # Align types
     df_ohlcv['symbol'] = df_ohlcv['symbol'].astype(str)
-    df_lob['symbol'] = df_lob['symbol'].astype(str)
+    df_lob['symbol']   = df_lob['symbol'].astype(str)
     
-    # Merge_asof: for each row in df_ohlcv, match the nearest row in df_lob 
-    # that has a timestamp <= ohlcv_timestamp.
-    df_merged = pd.merge_asof(
-        df_ohlcv, 
-        df_lob, 
-        on='datetime', 
-        by='symbol', 
+    return pd.merge_asof(
+        df_ohlcv, df_lob,
+        on='datetime', by='symbol',
         direction='backward'
     )
-    
-    logger.info(f"Merge complete. Final shape: {df_merged.shape}")
-    return df_merged
 
 if __name__ == "__main__":
     pass
