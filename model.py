@@ -5,6 +5,7 @@ import lightgbm as lgb
 import catboost as cb
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.model_selection import TimeSeriesSplit
+from sklearn.calibration import CalibratedClassifierCV
 import os
 
 logger = logging.getLogger(__name__)
@@ -64,8 +65,16 @@ def train_elite_ensemble_v2(df: pd.DataFrame, feature_cols: list, target_col: st
         )
         cb_fold.fit(X_train, y_train, eval_set=(X_val, y_val))
         
-        # 3. Ensemble Probabilities
-        p_l = lgb_fold.predict_proba(X_val); p_c = cb_fold.predict_proba(X_val)
+        # 3. Probability Calibration (Fix 1: Isotonic Regression)
+        lgb_cal = CalibratedClassifierCV(lgb_fold, method='isotonic', cv='prefit')
+        lgb_cal.fit(X_val, y_val)
+        
+        cb_cal = CalibratedClassifierCV(cb_fold, method='isotonic', cv='prefit')
+        cb_cal.fit(X_val, y_val)
+        
+        # 4. Ensemble Calibrated Probabilities
+        p_l = lgb_cal.predict_proba(X_val)
+        p_c = cb_cal.predict_proba(X_val)
         probs = (p_l + p_c) / 2
         preds = np.argmax(probs, axis=1)
         
@@ -73,17 +82,18 @@ def train_elite_ensemble_v2(df: pd.DataFrame, feature_cols: list, target_col: st
         fold_metrics.append(acc)
         logger.info(f"Fold {fold+1} Acc: {acc:.4f}")
         
-        best_lgb, best_cb = lgb_fold, cb_fold
+        best_lgb, best_cb = lgb_cal, cb_cal
         
     avg_acc = np.mean(fold_metrics)
     logger.info(f"Average End-to-End CV Acc: {avg_acc:.4f}")
     
-    # Save production weights
+    # Note: Booster save only works for raw booster, not calibrated wrapper.
+    # We return the wrappers for inference in main.py.
     os.makedirs('models', exist_ok=True)
-    best_lgb.booster_.save_model('models/lgb_v2.txt')
-    best_cb.save_model('models/cb_v2.cbm')
     
     # Importance Stability
-    final_imp = pd.DataFrame({'feature': selected_cols, 'importance': best_lgb.feature_importances_}).sort_values('importance', ascending=False)
+    # Importance from final fold's base model (LGBM)
+    base_lgb = best_lgb.estimator
+    final_imp = pd.DataFrame({'feature': selected_cols, 'importance': base_lgb.feature_importances_}).sort_values('importance', ascending=False)
     
     return best_lgb, best_cb, final_imp, selected_cols
