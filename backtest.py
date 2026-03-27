@@ -30,14 +30,11 @@ def compute_advanced_metrics(portfolio_rets: pd.Series):
     drawdown = (cum_rets / highwater) - 1
     max_dd = drawdown.min()
     
-    drawdown_idx = drawdown[drawdown < 0].index
-    if not drawdown_idx.empty:
-        # Max duration in bars
-        is_dd = (drawdown < 0).astype(int)
-        dd_runs = is_dd.groupby((is_dd != is_dd.shift()).cumsum()).cumsum()
-        max_dd_duration = dd_runs.max()
-    else:
-        max_dd_duration = 0
+    # FIXED BUG 8: Drawdown Duration
+    is_dd = (drawdown < 0).astype(int)
+    dd_groups = (is_dd != is_dd.shift()).cumsum()
+    dd_runs = is_dd.groupby(dd_groups).cumsum()
+    max_dd_duration = int(dd_runs.max()) if not dd_runs.empty else 0
         
     calmar = ann_ret / abs(max_dd) if max_dd != 0 else np.nan
     
@@ -84,8 +81,6 @@ def run_backtest_elite(df: pd.DataFrame, preds: np.array, probs: np.array,
     metrics = compute_advanced_metrics(portfolio_rets)
     
     # 5. Trade Logging
-    # We identify "trades" as when position changes from or to a non-zero state.
-    # For simplicity, we log everytime position != prev_position and (pos != 0 or prev_pos != 0)
     bt_df['pos_changed'] = bt_df.groupby('symbol')['actual_pos'].diff().abs().gt(0).astype(int)
     trades = bt_df[bt_df['pos_changed'] == 1].copy()
     

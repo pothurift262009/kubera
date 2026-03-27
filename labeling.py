@@ -20,25 +20,21 @@ def apply_triple_barrier_elite(df: pd.DataFrame, config: dict = None) -> pd.Data
     
     df = df.sort_values(['symbol', 'datetime']).reset_index(drop=True)
     
-    # Barriers relative to current 'close'
-    # Prediction starts from the NEXT bar.
-    # We use non-shifted ATR to define barriers relative to the 'now' price.
-    tr_vol = df['atr_14'].fillna(method='bfill')
+    # Bug Fix: Use .bfill() for pandas 3.0 compatibility
+    tr_vol = df['atr_14'].bfill()
     
     tp_long = df['close'] + tp_mult * tr_vol
     sl_long = df['close'] - sl_mult * tr_vol
     tp_short = df['close'] - tp_mult * tr_vol
     sl_short = df['close'] + sl_mult * tr_vol
     
-    # Trackers for the first hit
     hit_tp_l = np.full(len(df), 999)
     hit_sl_l = np.full(len(df), 999)
     hit_tp_s = np.full(len(df), 999)
     hit_sl_s = np.full(len(df), 999)
     
-    # Optimized Vectorized Shifts
-    # We use a numpy view to speed up.
     for i in range(1, max_bars + 1):
+        # We group by symbol to avoid crossing stocks during shift
         h_fut = df.groupby('symbol')['high'].shift(-i).values
         l_fut = df.groupby('symbol')['low'].shift(-i).values
         
@@ -55,15 +51,13 @@ def apply_triple_barrier_elite(df: pd.DataFrame, config: dict = None) -> pd.Data
         hit_sl_s[m_sl_s] = i
         
     df['label'] = 1
-    
-    # Logic: First hit determines label
     long_win = (hit_tp_l <= max_bars) & (hit_tp_l < hit_sl_l)
     short_win = (hit_tp_s <= max_bars) & (hit_tp_s < hit_sl_s)
     
     df.loc[long_win, 'label'] = 2
     df.loc[short_win, 'label'] = 0
     
-    # Filter out the edge tails
+    # Filter edge tails
     last_idx = df.groupby('symbol').tail(max_bars).index
     df.loc[last_idx, 'label'] = 1
     
