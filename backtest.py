@@ -5,41 +5,45 @@ import os
 
 logger = logging.getLogger(__name__)
 
-def compute_v2_risk_metrics(portfolio_rets: pd.Series):
+def compute_v4_metrics(portfolio_rets: pd.Series):
     """
-    Advanced Risk/Reward Metrics: Sharpe, Sortino, Calmar, Max Drawdown Duration.
+    Advanced Risk/Reward Metrics v4: Sharpe, Sortino, Calmar, PF, and Rolling Stability.
     """
+    if portfolio_rets.empty:
+        return {'Sharpe': 0, 'Total Return': 0}
+        
     cum_rets = (1 + portfolio_rets).cumprod()
     total_ret = cum_rets.iloc[-1] - 1
     
-    # 5-min bars: 75 / day * 252 days / year
+    # Yearly bars: 75/day * 252 days
     bars_per_year = 75 * 252
     ann_ret = (1 + total_ret)**(bars_per_year / len(portfolio_rets)) - 1
     
-    # Corrected Sharpe/Sortino (Annualized)
-    rf = 0.05 / bars_per_year # Libor approximation
+    # Corrected Sharpe/Sortino
+    rf = 0.05 / bars_per_year
     excess = portfolio_rets - rf
     sharpe = np.sqrt(bars_per_year) * excess.mean() / (excess.std() + 1e-10)
     
     downside = portfolio_rets[portfolio_rets < 0]
     sortino = np.sqrt(bars_per_year) * excess.mean() / (downside.std() + 1e-10)
     
-    # Max Drawdown & Duration
+    # Max Drawdown
     highwater = cum_rets.cummax()
     drawdown = (cum_rets / highwater) - 1
     max_dd = drawdown.min()
     
-    # Calmar Ratio
-    calmar = ann_ret / abs(max_dd) if max_dd != 0 else np.nan
+    # Profit Factor
+    gross_wins = portfolio_rets[portfolio_rets > 0].sum()
+    gross_losses = portfolio_rets[portfolio_rets < 0].sum()
+    profit_factor = gross_wins / abs(gross_losses) if gross_losses != 0 else np.inf
     
-    # Drawdown Duration
-    is_dd = (drawdown < 0).astype(int)
-    dd_groups = (is_dd != is_dd.shift()).cumsum()
-    dd_runs = is_dd.groupby(dd_groups).cumsum()
-    max_dd_duration = int(dd_runs.max()) if not dd_runs.empty else 0
-    
-    # Win Rate
-    win_rate = (portfolio_rets > 0).mean()
+    # Rolling Sharpe (30-day = 30 * 75 bars)
+    window = 30 * 75
+    if len(portfolio_rets) > window:
+        rolling_sharpe = portfolio_rets.rolling(window).apply(lambda x: np.sqrt(bars_per_year) * x.mean() / (x.std() + 1e-10)).dropna()
+        final_roll_sharpe = rolling_sharpe.iloc[-1]
+    else:
+        final_roll_sharpe = sharpe
     
     return {
         'Total Return': total_ret,
@@ -47,78 +51,104 @@ def compute_v2_risk_metrics(portfolio_rets: pd.Series):
         'Sharpe': sharpe,
         'Sortino': sortino,
         'Max Drawdown': max_dd,
-        'Max DD Duration': max_dd_duration,
-        'Calmar': calmar,
-        'Win Rate': win_rate
+        'Profit Factor': profit_factor,
+        'Rolling 30D Sharpe': final_roll_sharpe,
+        'Win Rate': (portfolio_rets > 0).mean()
     }
 
-def run_backtest_elite_v2(df: pd.DataFrame, probs: np.array,
-                         cost=0.0007, slippage=0.0003, prob_threshold=0.60,
-                         vol_filter_quantile=0.1, spread_filter_threshold=0.002):
+def run_backtest_elite_v4(df: pd.DataFrame, probs: np.array,
+                         cost=0.0002, slippage=0.0001, 
+                         long_threshold=0.52, short_threshold=0.55, confidence_gap_threshold=0.12,
+                         vol_filter_quantile=0.2, spread_filter_threshold=0.0015):
     """
-    Elite Production Backtester: High-Impact Trading Filtering & Confidence-Based Entry.
-    Includes Execution Delay, Persistence, and Vol-Regime Filters.
+    Elite Production Backtester V4: Confidence-Based Sizing, Clustering, and Session Filters.
+    Strictly follows ISSUE 1, 2, 3, 4, 5 requirements.
     """
-    logger.info(f"Starting Elite Backtest (V2) with Prob-Threshold={prob_threshold}...")
+    logger.info("Starting Elite Backtest (V4: High-Precision Sizing & Stability)...")
     
     bt_df = df.copy()
     bt_df['prob_short'] = probs[:, 0]
-    bt_df['prob_flat'] = probs[:, 1]
     bt_df['prob_long'] = probs[:, 2]
     
-    # 1. Trading Logic: Confidence-Based Entry
-    bt_df['raw_signal'] = 0
-    bt_df.loc[bt_df['prob_long'] > prob_threshold, 'raw_signal'] = 1
-    bt_df.loc[bt_df['prob_short'] > prob_threshold, 'raw_signal'] = -1
+    # Sorting for Confidence Gap
+    sorted_probs = np.sort(probs, axis=1)
+    bt_df['confidence_gap'] = sorted_probs[:, -1] - sorted_probs[:, -2]
     
-    # 2. Filters: Volatility and Spread
-    # Avoid wide spreads: avoid liquidity trap
+    # 1. Base Signal & Filter Logic
+    c_gap_mask = bt_df['confidence_gap'] > confidence_gap_threshold
+    bt_df['raw_signal'] = 0
+    bt_df.loc[(bt_df['prob_long'] > long_threshold) & c_gap_mask, 'raw_signal'] = 1
+    bt_df.loc[(bt_df['prob_short'] > short_threshold) & c_gap_mask, 'raw_signal'] = -1
+    
+    # ISSUE 4: Session Filter (09:15-09:30 and 15:15-15:30)
+    # Using minute-based filtering on IST index
+    bt_df['time_only'] = bt_df['datetime'].dt.time
+    start_cut = pd.to_datetime('09:30').time()
+    end_cut = pd.to_datetime('15:15').time()
+    bt_df['session_filter'] = ((bt_df['time_only'] >= start_cut) & (bt_df['time_only'] <= end_cut)).astype(int)
+    
+    # General Filters (OFI + Vol + Spread)
+    bt_df['vol_filter'] = (bt_df['atr_pct'] > bt_df['atr_pct'].quantile(vol_filter_quantile)).astype(int)
     bt_df['spread_filter'] = (bt_df['spread_pct'] < spread_filter_threshold).astype(int)
     
-    # Avoid extremely low volatility sessions (noise)
-    vol_floor = bt_df['atr_pct'].quantile(vol_filter_quantile)
-    bt_df['vol_filter'] = (bt_df['atr_pct'] > vol_floor).astype(int)
+    bt_df['ofi_filter'] = 0
+    bt_df.loc[(bt_df['raw_signal'] == 1) & (bt_df['ofi'] > 0), 'ofi_filter'] = 1
+    bt_df.loc[(bt_df['raw_signal'] == -1) & (bt_df['ofi'] < 0), 'ofi_filter'] = 1
     
-    # Combined Decision
-    bt_df['target_pos'] = bt_df['raw_signal'] * bt_df['spread_filter'] * bt_df['vol_filter']
+    # Combined target signal
+    bt_df['target_signal_filtered'] = bt_df['raw_signal'] * bt_df['session_filter'] * bt_df['vol_filter'] * bt_df['spread_filter'] * bt_df['ofi_filter']
     
-    # 3. Position Persistence & Smoothing (Avoid jumping every bar)
-    # HOLD positions if signal becomes flat (confidence drops) but DO NOT exit immediately 
-    # unless confidence in the opposite direction is strong. 
-    # For now, we apply persistent signals to reduce turnover.
-    bt_df['final_signal'] = bt_df.groupby('symbol')['target_pos'].transform(lambda x: x.replace(0, np.nan).ffill().fillna(0))
+    # ISSUE 3: Trade Clustering Filter (Min 3 bars between entries)
+    bt_df = bt_df.sort_values(['symbol', 'datetime'])
+    final_signals = []
     
-    # 4. EXECUTION DELAY: Decision at T is executed at T+1
-    bt_df['actual_pos'] = bt_df.groupby('symbol')['final_signal'].shift(1).fillna(0)
+    for _, group in bt_df.groupby('symbol'):
+        s = group['target_signal_filtered'].values.copy()
+        last_trade_idx = -999
+        for i in range(len(s)):
+            if s[i] != 0:
+                if (i - last_trade_idx) < 3: # ISSUE 3: clustering
+                    s[i] = 0
+                else:
+                    last_trade_idx = i
+        final_signals.extend(s)
     
-    # 5. Returns & Multi-Dimensional Costs
+    bt_df['cluster_filtered_signal'] = final_signals
+    
+    # ISSUE 2: Confidence-Based Position Sizing
+    # size = min(1.0, (confidence_gap - 0.12) * 3 + 0.5)
+    scale = (bt_df['confidence_gap'] - 0.12) * 3 + 0.5
+    bt_df['pos_size'] = np.clip(scale, 0, 1.0)
+    
+    bt_df['target_pos'] = bt_df['cluster_filtered_signal'] * bt_df['pos_size']
+    
+    # Smoothing & Execution (Persistence)
+    bt_df['persistent_pos'] = bt_df.groupby('symbol')['target_pos'].transform(lambda x: x.replace(0, np.nan).ffill().fillna(0))
+    bt_df['actual_pos'] = bt_df.groupby('symbol')['persistent_pos'].shift(1).fillna(0)
+    
+    # Returns & Costs
     bt_df['bar_ret'] = bt_df.groupby('symbol')['close'].pct_change().fillna(0)
     bt_df['strat_ret_gross'] = bt_df['actual_pos'] * bt_df['bar_ret']
     
-    # Dynamic Turnover Cost (Execution Cost)
+    # ISSUE 1: Reduced Costs
     bt_df['turnover'] = bt_df.groupby('symbol')['actual_pos'].diff().abs().fillna(0)
     bt_df['execution_cost'] = bt_df['turnover'] * (cost + slippage)
-    
     bt_df['net_ret'] = bt_df['strat_ret_gross'] - bt_df['execution_cost']
     
-    # 6. Global Portfolio Performance
+    # Global Metrics
     portfolio_rets = bt_df.groupby('datetime')['net_ret'].mean()
-    metrics = compute_v2_risk_metrics(portfolio_rets)
+    metrics = compute_v4_metrics(portfolio_rets)
     
-    # 7. Audit & Reporting
-    trades = bt_df[bt_df['turnover'] > 0].copy()
+    trades = bt_df[bt_df['turnover'] > 0]
     num_trades = len(trades)
-    avg_trade_ret = trades['net_ret'].mean() if num_trades > 0 else 0
     
-    logger.info(f"== V2 BACKTEST METRICS (N_TRADES={num_trades}) ==")
+    logger.info(f"== V4 BACKTEST METRICS (N_TRADES={num_trades}) ==")
     for k, v in metrics.items():
-        if 'Sharpe' in k or 'Sortino' in k or 'Calmar' in k:
-            logger.info(f"{k}: {v:.2f}")
-        else:
-            logger.info(f"{k}: {v:.2%}")
-    logger.info(f"Average Return Per Trade: {avg_trade_ret:.4%}")
-    
+        if 'Sharpe' in k or 'Return' in k or 'Drawdown' in k or 'Factor' in k:
+            if 'Sharpe' in k or 'Factor' in k: logger.info(f"{k}: {v:.2f}")
+            else: logger.info(f"{k}: {v:.2%}")
+            
     os.makedirs('logs', exist_ok=True)
-    trades[['datetime', 'symbol', 'close', 'actual_pos', 'net_ret', 'prob_short', 'prob_long']].to_csv('logs/trade_log_v2.csv', index=False)
+    trades.to_csv('logs/trade_log_v4.csv', index=False)
     
     return bt_df, portfolio_rets, metrics
