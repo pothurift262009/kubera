@@ -4,17 +4,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def apply_triple_barrier_elite_v5(df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
+def apply_triple_barrier_elite_v8(df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
     """
-    Elite Triple Barrier Method (V5): Asymmetric Payoffs.
-    Favors long-tail winners (tp_mult=2.0, sl_mult=1.0).
+    Elite Triple Barrier Method (V8): High Asymmetric Payoffs.
+    Favors long-tail winners (tp_mult=2.2, sl_mult=1.0).
     """
     if config is None:
-        config = {'tp_mult': 2.0, 'sl_mult': 1.0, 'max_bars': 6}
+        config = {'tp_mult': 2.2, 'sl_mult': 1.0, 'max_bars': 6}
         
     tp_mult, sl_mult, max_bars = config['tp_mult'], config['sl_mult'], config['max_bars']
     
-    logger.info(f"Applying Triple Barrier (V5: Asymmetric) with tp={tp_mult}, sl={sl_mult}, horizon={max_bars}...")
+    logger.info(f"Applying Triple Barrier (V8: High Asymmetric) with tp={tp_mult}, sl={sl_mult}, horizon={max_bars}...")
     
     df = df.sort_values(['symbol', 'datetime']).reset_index(drop=True)
     
@@ -55,5 +55,5 @@ def apply_triple_barrier_elite_v5(df: pd.DataFrame, config: dict = None) -> pd.D
     # Filter edge tails
     df.loc[df.groupby('symbol').tail(max_bars).index, 'label'] = 1
     
-    logger.info(f"Label Stats (V5): {df['label'].value_counts(normalize=True).to_dict()}")
+    logger.info(f"Label Stats (V8): {df['label'].value_counts(normalize=True).to_dict()}")
     return df
