@@ -4,23 +4,21 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def apply_triple_barrier_elite_v2(df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
+def apply_triple_barrier_elite_v5(df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
     """
-    Elite Triple Barrier Method (TBM) with Strict Decision Information.
-    Uses volatility at decision time (T-1) to set barriers for future windows.
-    Labels: 0 = Short, 1 = Flat, 2 = Long.
+    Elite Triple Barrier Method (V5): Asymmetric Payoffs.
+    Favors long-tail winners (tp_mult=2.0, sl_mult=1.0).
     """
     if config is None:
         config = {'tp_mult': 2.0, 'sl_mult': 1.0, 'max_bars': 6}
         
     tp_mult, sl_mult, max_bars = config['tp_mult'], config['sl_mult'], config['max_bars']
     
-    logger.info(f"Applying Triple Barrier (V2) with tp={tp_mult}, sl={sl_mult}, horizon={max_bars}...")
+    logger.info(f"Applying Triple Barrier (V5: Asymmetric) with tp={tp_mult}, sl={sl_mult}, horizon={max_bars}...")
     
     df = df.sort_values(['symbol', 'datetime']).reset_index(drop=True)
     
-    # Critical: Use Decision-Time Volatility (T-1) for Barrier Setting
-    # NOTE: df['atr_14'] is already shifted(1) in feature_engineering.py
+    # Decision-Time Volatility (T-1)
     tr_vol = df['atr_14'].bfill()
     
     tp_long = df['close'] + tp_mult * tr_vol
@@ -32,7 +30,6 @@ def apply_triple_barrier_elite_v2(df: pd.DataFrame, config: dict = None) -> pd.D
     hit_tp_s, hit_sl_s = [np.full(len(df), 999) for _ in range(2)]
     
     for i in range(1, max_bars + 1):
-        # Peak/Trough within future horizon
         h_fut = df.groupby('symbol')['high'].shift(-i).values
         l_fut = df.groupby('symbol')['low'].shift(-i).values
         
@@ -55,8 +52,8 @@ def apply_triple_barrier_elite_v2(df: pd.DataFrame, config: dict = None) -> pd.D
     df.loc[l_win, 'label'] = 2
     df.loc[s_win, 'label'] = 0
     
-    # Filter edge tails (not enough bars to confirm label)
+    # Filter edge tails
     df.loc[df.groupby('symbol').tail(max_bars).index, 'label'] = 1
     
-    logger.info(f"Label Stats: {df['label'].value_counts(normalize=True).to_dict()}")
+    logger.info(f"Label Stats (V5): {df['label'].value_counts(normalize=True).to_dict()}")
     return df
