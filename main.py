@@ -36,7 +36,7 @@ def main():
         'slippage': 0.0001, 
         'long_threshold': 0.58,      
         'short_threshold': 0.60,     
-        'conf_gap_threshold': 0.10,  
+        'conf_gap_threshold': 0.08,  
         'strength_percentile': 0.20, 
         'min_hold_bars': 3,          
         'vol_filter_quantile': 0.4, 
