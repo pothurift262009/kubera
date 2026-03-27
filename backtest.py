@@ -66,6 +66,9 @@ def run_backtest_elite_v7(df: pd.DataFrame, probs: np.array,
     bt_df['expectancy_s'] = bt_df['p_s'] * (2.0 * bt_df['atr_pct']) - (1.0 - bt_df['p_s']) * (1.0 * bt_df['atr_pct'])
     
     # 3. BASE SIGNAL & ELITE FILTERS
+    # Require MINIMUM expectancy (ISSUE 3)
+    expectancy_floor = 0.0004 # 4 bps predicted edge floor
+    
     # Regime: Trend Check or Volatility Check
     vol_floor = bt_df['atr_pct'].quantile(vol_filter_quantile)
     bt_df['regime_ok'] = ((bt_df['adx_14'] > 25) | (bt_df['atr_pct'] > vol_floor)).astype(int)
@@ -78,13 +81,13 @@ def run_backtest_elite_v7(df: pd.DataFrame, probs: np.array,
     bt_df['trigger'] = 0
     # Long Criteria
     l_mask = (bt_df['p_l'] > long_threshold) & (bt_df['conf_gap'] > conf_gap_threshold) & \
-             (bt_df['strength'] > strength_floor) & (bt_df['expectancy_l'] > 0) & \
+             (bt_df['strength'] > strength_floor) & (bt_df['expectancy_l'] > expectancy_floor) & \
              bt_df['regime_ok'] & l_micro & (bt_df['spread_pct'] < spread_filter_threshold)
     bt_df.loc[l_mask, 'trigger'] = 1
     
     # Short Criteria
     s_mask = (bt_df['p_s'] > short_threshold) & (bt_df['conf_gap'] > conf_gap_threshold) & \
-             (bt_df['strength'] > strength_floor) & (bt_df['expectancy_s'] > 0) & \
+             (bt_df['strength'] > strength_floor) & (bt_df['expectancy_s'] > expectancy_floor) & \
              bt_df['regime_ok'] & s_micro & (bt_df['spread_pct'] < spread_filter_threshold)
     bt_df.loc[s_mask, 'trigger'] = -1
     
