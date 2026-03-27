@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Data files
+*.csv
+*.gz
+*.parquet
+
+# Logs
+*.log
+
+# Notebooks (optional)
+*.ipynb
+
+# Images
+*.HEIC
+*.png
+*.jpg
+
+# Mac
+.DS_Store
+
+# Models
+*.txt
+*.cbm
+models/
