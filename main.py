@@ -35,10 +35,10 @@ def main():
     BT_CONFIG = {
         'cost': 0.0002, 
         'slippage': 0.0001, 
-        'long_threshold': 0.60,      # ISSUE 4: 0.60-0.62 range
-        'short_threshold': 0.62,     # ISSUE 4
-        'conf_gap_threshold': 0.12,  # ISSUE 2: Alpha certainty filter
-        'strength_percentile': 0.25, # ISSUE 1: Remove bottom 25% weakest signals
+        'long_threshold': 0.58,      # Relaxed from 0.60
+        'short_threshold': 0.58,     # Relaxed from 0.62
+        'conf_gap_threshold': 0.10,  # Relaxed from 0.12
+        'strength_percentile': 0.15, # Relaxed from 0.25
         'min_hold_bars': 3,          # Maintain V6 Logic (Persistence)
         'vol_filter_quantile': 0.4,  # Maintain V6 Logic (Regime)
         'spread_filter_threshold': 0.0012 # Maintain V6 Logic (Spread)
