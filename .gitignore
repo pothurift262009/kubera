@@ -1,28 +1,50 @@
-# Python cache
-__pycache__/
-*.pyc
+# ─── Credentials — never commit ────────────────────────────────
+.env
+.env.*
+!.env.example
+access_token.txt
+api_key.txt
+secrets.yaml
+credentials.json
+config.local.yaml
 
-# Data files
-*.csv
-*.gz
+# ─── Data — too large / not redistributable ────────────────────
 *.parquet
+*.csv.gz
+data/raw/
+data/processed/
+data/*.db
+nifty*.csv
+*_1min_*.csv
+*_5min_*.csv
 
-# Logs
-*.log
+# NOTE: results/**/*.csv is intentionally NOT ignored — published
+# trade ledgers and sweeps are the evidence for this project.
 
-# Notebooks (optional)
-*.ipynb
-
-# Images
-*.HEIC
-*.png
-*.jpg
-
-# Mac
-.DS_Store
-
-# Models
-*.txt
+# ─── Trained model binaries ────────────────────────────────────
+*.joblib
+*.lgb
 *.cbm
 models/
-*.html
+catboost_info/
+
+# ─── Python ────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ─── OS ────────────────────────────────────────────────────────
+.DS_Store
+*.HEIC
+
+# ─── Runtime databases ─────────────────────────────────────────
+*.sqlite
+
+# ─── Deliberately NOT ignored (was excluding the work itself) ──
+# *.png  — equity curves, feature importance, dashboard screenshots
+# *.ipynb — research notebooks
+# *.txt  — requirements.txt and results files
+# *.log  — paper-trading and pipeline run logs kept under results/
+# *.html — generated reports

@@ -1,0 +1,31 @@
+kite:
+  api_key: "YOUR_API_KEY"
+  api_secret: "YOUR_API_SECRET"
+  access_token: ""
+
+strategy:
+  name: "VWAP_REVERSION"
+  vwap_deviation_pct: 1.5
+  rsi_period: 14
+  rsi_oversold: 32
+  rsi_overbought: 68
+  sl_ratio: 1.0
+  volume_multiplier: 2.0
+  max_positions: 2
+  risk_pct: 0.03
+  min_qty: 3
+  square_off_time: "15:15"
+
+capital:
+  total: 100000
+
+data:
+  csv_path: "data/nifty50_5min_5years.csv"
+
+costs:
+  brokerage: 20
+  slippage_pct: 0.001
+
+logging:
+  level: "INFO"
+  log_dir: "logs"

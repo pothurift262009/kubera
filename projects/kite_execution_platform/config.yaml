@@ -1,0 +1,27 @@
+kite:
+  api_key: "YOUR_API_KEY"
+  api_secret: "YOUR_API_SECRET"
+  access_token: ""
+
+strategy:
+  name: "ORB"
+  orb_minutes: 15          # Opening range = first 15 min candles
+  max_positions: 2         # Max concurrent intraday positions
+  risk_pct: 0.015           # 2% of capital at risk per trade
+  rr_ratio: 1.0            # Risk:Reward = 1:2
+  volume_multiplier: 2.0   # Breakout candle volume must be 1.5x avg
+  square_off_time: "14:30" # Hard EOD square off
+
+capital:
+  total: 100000            # ₹1 Lakh
+
+data:
+  csv_path: "data/nifty50_5min_5years.csv"
+
+costs:
+  brokerage: 20            # ₹20 flat per order (Zerodha)
+  slippage_pct: 0.001      # 0.1% slippage estimate
+
+logging:
+  level: "INFO"
+  log_dir: "logs"

@@ -1,0 +1,10 @@
+pandas
+pyarrow
+scikit-learn
+xgboost
+pandas-ta
+matplotlib
+seaborn
+scipy
+joblib
+numpy==1.26.4

@@ -1,0 +1,29 @@
+2026-03-30 09:30:24,794 - ERROR - Loop error: Request failed (kt-common).
+2026-03-30 10:00:42,020 - ERROR - Loop error: Request failed (kt-common).
+2026-03-30 14:34:28,575 - INFO - [DRY] BUY ADANIENT | Qty: 5 | Price: 1762.70 | Prob: 0.5771
+2026-03-30 14:34:28,576 - INFO - [DRY] BUY BAJFINANCE | Qty: 12 | Price: 802.80 | Prob: 0.5610
+2026-03-30 14:34:28,576 - INFO - [DRY] BUY WIPRO | Qty: 53 | Price: 187.03 | Prob: 0.5735
+2026-03-30 14:49:36,078 - INFO - [DRY] BUY HDFCBANK | Qty: 13 | Price: 730.90 | Prob: 0.5699
+2026-03-30 14:54:38,543 - INFO - [DRY] BUY INDUSINDBK | Qty: 13 | Price: 754.00 | Prob: 0.5612
+2026-04-02 09:44:47,122 - INFO - [DRY] SELL ADANIPORTS | Qty: 7 | Price: 1336.60 | Prob: 0.4355 | Nifty: -1.86%
+2026-04-02 09:44:47,123 - INFO - [DRY] SELL APOLLOHOSP | Qty: 1 | Price: 7191.00 | Prob: 0.3789 | Nifty: -1.86%
+2026-04-02 09:44:47,123 - INFO - [DRY] SELL ASIANPAINT | Qty: 4 | Price: 2164.00 | Prob: 0.4497 | Nifty: -1.86%
+2026-04-02 09:44:47,123 - INFO - [DRY] SELL BAJAJ-AUTO | Qty: 1 | Price: 8760.00 | Prob: 0.4229 | Nifty: -1.86%
+2026-04-02 09:44:47,124 - INFO - [DRY] SELL BAJAJFINSV | Qty: 6 | Price: 1609.50 | Prob: 0.4315 | Nifty: -1.86%
+2026-04-02 10:15:36,509 - INFO - EXIT ADANIPORTS | Reason: ATR Stop Loss | Entry: 1336.60 | Exit: 1342.80 | PnL: -0.46%
+2026-04-02 10:15:38,277 - INFO - [DRY] SELL ADANIENT | Qty: 5 | Price: 1782.40 | Prob: 0.3622 | Nifty: -2.06%
+2026-04-02 10:46:28,086 - INFO - EXIT APOLLOHOSP | Reason: Max hold 60min | Entry: 7191.00 | Exit: 7181.00 | PnL: +0.14%
+2026-04-02 10:46:28,087 - INFO - EXIT ASIANPAINT | Reason: ATR Stop Loss | Entry: 2164.00 | Exit: 2173.20 | PnL: -0.43%
+2026-04-02 10:46:28,087 - INFO - EXIT BAJAJ-AUTO | Reason: Max hold 60min | Entry: 8760.00 | Exit: 8695.50 | PnL: +0.74%
+2026-04-02 10:46:28,087 - INFO - EXIT BAJAJFINSV | Reason: Max hold 60min | Entry: 1609.50 | Exit: 1608.30 | PnL: +0.07%
+2026-04-02 10:46:29,913 - INFO - [DRY] SELL ADANIPORTS | Qty: 7 | Price: 1345.80 | Prob: 0.3469 | Nifty: -2.02%
+2026-04-02 10:46:29,913 - INFO - [DRY] SELL APOLLOHOSP | Qty: 1 | Price: 7181.00 | Prob: 0.2445 | Nifty: -2.02%
+2026-04-02 10:46:29,913 - INFO - [DRY] SELL ASIANPAINT | Qty: 4 | Price: 2173.20 | Prob: 0.3704 | Nifty: -2.02%
+2026-04-02 10:46:29,913 - INFO - [DRY] SELL AXISBANK | Qty: 8 | Price: 1160.50 | Prob: 0.3074 | Nifty: -2.02%
+2026-04-02 11:07:04,074 - INFO - EXIT ADANIENT | Reason: ATR Stop Loss | Entry: 1782.40 | Exit: 1790.40 | PnL: -0.45%
+2026-04-02 11:07:04,075 - INFO - EXIT APOLLOHOSP | Reason: ATR Stop Loss | Entry: 7181.00 | Exit: 7204.00 | PnL: -0.32%
+2026-04-02 11:07:05,906 - INFO - [DRY] SELL ADANIENT | Qty: 5 | Price: 1790.40 | Prob: 0.3455 | Nifty: -1.95%
+2026-04-02 11:07:05,906 - INFO - [DRY] SELL APOLLOHOSP | Qty: 1 | Price: 7204.00 | Prob: 0.2577 | Nifty: -1.95%
+2026-04-12 15:16:26,150 - WARNING - Nifty fetch error: HTTPSConnectionPool(host='api.kite.trade', port=443): Read timed out. (read timeout=7)
+2026-04-12 15:22:07,284 - WARNING - Nifty fetch error: HTTPSConnectionPool(host='api.kite.trade', port=443): Read timed out. (read timeout=7)
+2026-04-12 15:27:58,459 - WARNING - Nifty fetch error: HTTPSConnectionPool(host='api.kite.trade', port=443): Read timed out. (read timeout=7)
